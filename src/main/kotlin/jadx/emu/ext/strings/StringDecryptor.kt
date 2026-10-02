@@ -200,8 +200,51 @@ class StringDecryptor(
         return dispatcherHandles(callee.declClass)?.getOrNull(idx) ?: callee
     }
 
-    private fun foldable(callee: DexMethod, args: List<Any?>): Boolean =
-        isDecoderMethod(resolveTarget(callee, args))
+    private fun foldable(callee: DexMethod, args: List<Any?>): Boolean {
+        val target = resolveTarget(callee, args)
+        return isDecoderMethod(target) && !isStateful(target)
+    }
+
+    private val statefulCache = HashMap<String, Boolean>()
+
+    private fun isStateful(m: DexMethod): Boolean = statefulCache.getOrPut("${m.declClass}->${m.ref.shortId}") {
+        val seen = HashSet<String>()
+        val work = ArrayDeque<DexMethod>().apply { add(m) }
+        var stateful = false
+        while (work.isNotEmpty() && !stateful) {
+            val cur = work.removeFirst()
+            if (!seen.add("${cur.declClass}->${cur.ref.shortId}")) continue
+            val lazyInit = lazyInitFields(cur)
+            for (insn in cur.insns) {
+                when (insn.opcode) {
+                    Opcode.SPUT -> {
+                        val fr = insn.ref as? FieldRef ?: continue
+                        if (source.classInfo(fr.declClass) != null && fr.key !in lazyInit) { stateful = true; break }
+                    }
+                    in INVOKE_OPCODES -> (insn.ref as? MethodRef)?.let { r -> source.method(r.declClass, r.shortId)?.let { work.add(it) } }
+                    else -> {}
+                }
+            }
+        }
+        stateful
+    }
+
+    private fun lazyInitFields(m: DexMethod): Set<String> {
+        val out = HashSet<String>()
+        val insns = m.insns
+        for (i in insns.indices) {
+            val sget = insns[i]
+            if (sget.opcode != Opcode.SGET) continue
+            val fr = sget.ref as? FieldRef ?: continue
+            val reg = sget.regs[0]
+            for (j in i + 1 until insns.size) {
+                val t = insns[j]
+                if ((t.opcode == Opcode.IF_EQZ || t.opcode == Opcode.IF_NEZ) && t.regs[0] == reg) { out.add(fr.key); break }
+                if (definesReg(t) == reg || t.opcode in IF_OPS || t.opcode == Opcode.GOTO || t.opcode in INVOKE_OPCODES) break
+            }
+        }
+        return out
+    }
 
     private fun plausible(s: String): Boolean {
         if (s.isEmpty()) return false
