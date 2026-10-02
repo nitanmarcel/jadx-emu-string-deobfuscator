@@ -13,7 +13,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly("io.github.nitanmarcel:jadx-emu:0.1.0-beta.2")
+    compileOnly("io.github.nitanmarcel:jadx-emu:0.1.0-beta.4")
 
     compileOnly("io.github.skylot:jadx-core:1.5.6")
     compileOnly(kotlin("stdlib"))
