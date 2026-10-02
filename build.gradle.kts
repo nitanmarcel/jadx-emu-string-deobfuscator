@@ -4,7 +4,7 @@ plugins {
     kotlin("jvm") version "2.3.10"
 }
 
-version = System.getenv("VERSION") ?: "dev"
+version = "0.0.2"
 
 repositories {
     mavenLocal()
